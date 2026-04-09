@@ -47,11 +47,12 @@ camino = "1"
 
 # Logging / tracing
 tracing            = "0.1"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "ansi"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
 
 # Testing (dev-only; crates opt in with `dep.workspace = true`)
 assert_cmd = "2"
 insta      = "1"
+predicates = "3"
 
 # ---------------------------------------------------------------------------
 # Workspace-wide lint configuration

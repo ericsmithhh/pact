@@ -13,17 +13,11 @@ path = "src/main.rs"
 # Features
 # ---------------------------------------------------------------------------
 [features]
-# Include LSP server support (enabled by default; disable for minimal builds).
-default = ["lsp"]
-lsp     = ["dep:pact-lsp"]
+# Enable ANSI colour codes in tracing output (disable for embedded / CI environments).
+default = ["ansi"]
+ansi    = ["tracing-subscriber/ansi"]
 
 [dependencies]
-pact-compiler.workspace    = true
-pact-interpreter.workspace = true
-pact-lsp                   = { workspace = true, optional = true }
-pact-fmt.workspace         = true
-pact-diagnostic.workspace  = true
-
 anyhow.workspace = true
 clap.workspace   = true
 
@@ -32,7 +26,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
-predicates           = "3"
+predicates.workspace = true
 
 [lints]
 workspace = true
