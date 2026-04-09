@@ -38,11 +38,57 @@ No `async`/`await` spreading through your code. A spawned task is a pact operati
 
 ## How the safety works
 
-Every function carries an effect row — a set tracked by the type system. When you call `Http.request(...)`, the compiler adds `Http` to your function's row. When you call `Console.print(...)`, it adds `Console`. This happens through row-polymorphic unification during Hindley-Milner inference, so you never write it by hand. The compiler figures it out.
+Every function carries an effect row — basically a set of labels the compiler maintains. When your code calls `Http.request(...)`, the compiler adds `Http` to that set. Call `Console.print(...)`, it adds `Console`. You don't write any of this. The compiler infers it by walking your code.
 
-The row is a constraint. A function typed `with {Console, FileSystem}` can only unify with operations defined in those two pacts. There's no `Http.request` in scope — the type checker has no rule that would let it resolve that call. It's not a runtime check. The unification literally fails. The program is rejected the same way `1 + "hello"` is rejected: the types don't work out.
+The set is a hard constraint. If your function's row says `{Console, FileSystem}`, those are the only operations the type checker will accept. Try calling `Http.request` and there's no matching rule — the compiler rejects it the same way it rejects `1 + "hello"`. The types simply don't line up. No special sandbox logic. Just normal type checking doing its job.
 
-This is what makes it a proof rather than a policy. Row typing is based on Rémy's row polymorphism (1989) extended to effect rows by Leijen in the Koka work. The rows are unordered sets with a polymorphic tail variable `| r` that captures "everything else." When a handler discharges an effect via `with bind ...`, the type system removes that label from the row through row restriction. What remains is provably the only set of operations the wrapped code can perform.
+When you wrap code in a `with bind ...` block, the bound effect gets removed from the row. What's left after all bindings are applied is exactly the set of effects the code can still perform. If that set is empty, the code is pure. If it contains only `{AgentIO}`, the code can only call agent operations. There's no way to sneak something in — the row is computed from the actual operations in your code, not from annotations you might forget.
+
+The underlying theory builds on row polymorphism (Rémy, 1989) extended to effects by Leijen's Koka work. But the practical guarantee is simple: the compiler sees everything your function does, tracks it in a set, and enforces that set at every call boundary. Effects in, effects out, nothing hidden.
+
+Here's the full cycle:
+
+```
+                    ┌─────────────────────────────────┐
+                    │         pact Console {           │
+                    │           fun print(...)         │  ◄── DECLARE operations
+                    │           fun read_line(...)     │      (compile-time contract)
+                    │         }                        │
+                    └──────────────┬──────────────────┘
+                                   │
+                    ┌──────────────▼──────────────────┐
+                    │      fun my_app() {              │
+                    │        Console.print("hi")       │  ◄── USE operations
+                    │      }                           │      (compiler infers effect row)
+                    │                                  │
+                    │  inferred: my_app() => ()        │
+                    │            with {Console | r}    │      {Console} added to row
+                    └──────────────┬──────────────────┘
+                                   │
+          ┌────────────────────────┼────────────────────────┐
+          │                        │                        │
+          ▼                        ▼                        ▼
+  ┌───────────────┐    ┌───────────────────┐    ┌──────────────────┐
+  │  bind Console  │    │  bind Console      │    │  No bind provided │
+  │  { print(m)    │    │  { print(m) then   │    │                    │
+  │    then ...    │    │    log_to_file(m)  │    │  Compile error:    │
+  │    real IO     │    │    ...             │    │  "Console not      │
+  │  }             │    │  }                 │    │   bound in scope"  │
+  │                │    │                    │    │                    │
+  │  PRODUCTION    │    │  TESTING / MOCK    │    │  SANDBOXED         │
+  └───────────────┘    └───────────────────┘    └──────────────────┘
+          │                        │
+          ▼                        ▼
+  ┌───────────────────────────────────────────┐
+  │  with console_bind {                       │
+  │      my_app()    ◄── row restriction:      │  ◄── BIND gives meaning
+  │  }                   {Console} removed,    │      (row restriction at
+  │                      remaining row is {}   │       type level)
+  │  Result type: () with {}  (pure!)          │
+  └───────────────────────────────────────────┘
+```
+
+The function declares what it needs. The type system tracks it. The binding fulfills it. Without a binding, the code doesn't compile. With a binding, the handled effects are removed from the row — what's left is the proof of what can still happen.
 
 The other half is bindings. A pact declares *what operations exist*. A binding decides *what they do*:
 
