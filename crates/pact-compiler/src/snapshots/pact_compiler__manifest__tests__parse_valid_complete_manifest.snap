@@ -1,0 +1,47 @@
+---
+source: crates/pact-compiler/src/manifest.rs
+assertion_line: 310
+expression: manifest
+---
+Manifest {
+    package: PackageInfo {
+        name: "weather-agent",
+        version: "0.1.0",
+        authors: [
+            "you@example.com",
+        ],
+        license: Some(
+            "MIT",
+        ),
+        description: Some(
+            "A weather-aware scheduling agent",
+        ),
+    },
+    dependencies: {
+        "http-client": "1.2.0",
+        "json": "0.8.0",
+    },
+    pacts: PactRequirements {
+        required: [
+            "Http",
+            "Console",
+            "ToolRegistry",
+        ],
+        optional: [
+            "FileSystem",
+        ],
+    },
+    seal: Some(
+        SealPolicy {
+            max_memory: Some(
+                "256mb",
+            ),
+            max_duration: Some(
+                "30s",
+            ),
+            allowed_hosts: [
+                "api.openweathermap.org",
+            ],
+        },
+    ),
+}

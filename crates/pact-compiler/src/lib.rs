@@ -20,6 +20,8 @@
 //! Compilation is structured as a graph of memoised Salsa queries so that
 //! incremental rebuilds only recompute phases whose inputs changed.
 
+pub mod manifest;
+
 /// Re-export the syntax crate so consumers of `pact-compiler` can reach CST
 /// types without an additional explicit dependency.
 pub use pact_syntax as syntax;
