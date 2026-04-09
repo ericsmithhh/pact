@@ -38,11 +38,13 @@ No `async`/`await` spreading through your code. A spawned task is a pact operati
 
 ## How the safety works
 
-A pact declares what your code needs: "I'll read files and print to console, nothing else." If you try to make a network call without `Http` in the signature, the compiler rejects it. Not a warning. A rejection.
+Every function carries an effect row — a set tracked by the type system. When you call `Http.request(...)`, the compiler adds `Http` to your function's row. When you call `Console.print(...)`, it adds `Console`. This happens through row-polymorphic unification during Hindley-Milner inference, so you never write it by hand. The compiler figures it out.
 
-Think of a hotel key. It opens one specific door. Can't use it on the wrong lock. The key *is* the proof. Same with types: if your function says `with {Console, FileSystem}`, the type proves you can only perform those operations. The compiler won't generate code for anything else.
+The row is a constraint. A function typed `with {Console, FileSystem}` can only unify with operations defined in those two pacts. There's no `Http.request` in scope — the type checker has no rule that would let it resolve that call. It's not a runtime check. The unification literally fails. The program is rejected the same way `1 + "hello"` is rejected: the types don't work out.
 
-Operations and bindings are separate. A pact declares *what operations are needed*. A binding decides *what they do*:
+This is what makes it a proof rather than a policy. Row typing is based on Rémy's row polymorphism (1989) extended to effect rows by Leijen in the Koka work. The rows are unordered sets with a polymorphic tail variable `| r` that captures "everything else." When a handler discharges an effect via `with bind ...`, the type system removes that label from the row through row restriction. What remains is provably the only set of operations the wrapped code can perform.
+
+The other half is bindings. A pact declares *what operations exist*. A binding decides *what they do*:
 
 ```pact
 fix tool_bind = bind AgentIO {
