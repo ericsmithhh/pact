@@ -374,11 +374,13 @@ fn test_filter_accepted() {
 /// `pact new myproject` accepts a project name and exits successfully.
 #[test]
 fn new_subcommand_accepts_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
     pact()
         .args(["new", "myproject"])
+        .current_dir(dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::is_empty());
+        .stdout(predicate::str::contains("Created bin project 'myproject'"));
 }
 
 /// `pact new` without a name must fail with a useful error.
@@ -394,21 +396,39 @@ fn new_without_name_fails() {
 /// `pact new myproject --template lib` accepts the `lib` template.
 #[test]
 fn new_with_template_lib() {
+    let dir = tempfile::tempdir().expect("tempdir");
     pact()
         .args(["new", "myproject", "--template", "lib"])
+        .current_dir(dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::is_empty());
+        .stdout(predicate::str::contains("Created lib project 'myproject'"));
 }
 
 /// `pact new myproject --template bin` accepts the `bin` template.
 #[test]
 fn new_with_template_bin() {
+    let dir = tempfile::tempdir().expect("tempdir");
     pact()
         .args(["new", "myproject", "--template", "bin"])
+        .current_dir(dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::is_empty());
+        .stdout(predicate::str::contains("Created bin project 'myproject'"));
+}
+
+/// `pact new myproject --template agent` accepts the `agent` template.
+#[test]
+fn new_with_template_agent() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "myproject", "--template", "agent"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Created agent project 'myproject'",
+        ));
 }
 
 /// An invalid template value produces a non-zero exit code.
@@ -429,4 +449,517 @@ fn new_help_works() {
         .assert()
         .success()
         .stderr(predicate::str::is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// `pact new` — name validation
+// ---------------------------------------------------------------------------
+
+/// Path traversal via `../evil` (dot-dot) is rejected.
+#[test]
+fn new_rejects_path_traversal_dotdot() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "../evil"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid project name"));
+}
+
+/// Absolute paths like `/tmp/bad` are rejected.
+#[test]
+fn new_rejects_absolute_path() {
+    pact()
+        .args(["new", "/tmp/bad"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid project name"));
+}
+
+/// Names with spaces are rejected.
+#[test]
+fn new_rejects_spaces_in_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "my app"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid project name"));
+}
+
+/// Uppercase letters are rejected.
+#[test]
+fn new_rejects_uppercase_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "MyApp"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid project name"));
+}
+
+/// `.` as a name is rejected.
+#[test]
+fn new_rejects_dot_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "."])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid project name"));
+}
+
+/// `..` as a name is rejected.
+#[test]
+fn new_rejects_double_dot_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", ".."])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid project name"));
+}
+
+/// Names starting with a digit are rejected.
+#[test]
+fn new_rejects_digit_prefixed_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "1abc"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid project name"));
+}
+
+/// Single-char name `a` is accepted.
+#[test]
+fn new_accepts_single_char_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "a"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created bin project 'a'"));
+}
+
+/// Hyphenated name `my-app` is accepted.
+#[test]
+fn new_accepts_hyphenated_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "my-app"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created bin project 'my-app'"));
+}
+
+// ---------------------------------------------------------------------------
+// `pact new` — project scaffolding
+// ---------------------------------------------------------------------------
+
+/// `pact new myapp` creates the expected bin-template files in the given
+/// directory and the generated `pact.toml` contains the project name.
+#[test]
+fn new_creates_bin_project() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "myapp"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created bin project 'myapp'"));
+
+    let root = dir.path().join("myapp");
+    assert!(root.join("pact.toml").is_file(), "pact.toml missing");
+    assert!(
+        root.join("src").join("main.pact").is_file(),
+        "src/main.pact missing"
+    );
+    assert!(
+        root.join("test").join("main_test.pact").is_file(),
+        "test/main_test.pact missing"
+    );
+    assert!(root.join(".gitignore").is_file(), ".gitignore missing");
+
+    // Verify generated pact.toml contains the project name.
+    let manifest = std::fs::read_to_string(root.join("pact.toml")).expect("pact.toml");
+    assert!(
+        manifest.contains("myapp"),
+        "pact.toml does not contain the project name"
+    );
+    assert!(
+        !manifest.contains("{{name}}"),
+        "pact.toml still contains placeholder"
+    );
+}
+
+/// `pact new mylib --template lib` creates the expected lib-template files
+/// and the generated `pact.toml` contains the project name.
+#[test]
+fn new_creates_lib_project() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "mylib", "--template", "lib"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created lib project 'mylib'"));
+
+    let root = dir.path().join("mylib");
+    assert!(root.join("pact.toml").is_file(), "pact.toml missing");
+    assert!(
+        root.join("src").join("lib.pact").is_file(),
+        "src/lib.pact missing"
+    );
+    assert!(
+        root.join("test").join("lib_test.pact").is_file(),
+        "test/lib_test.pact missing"
+    );
+    assert!(root.join(".gitignore").is_file(), ".gitignore missing");
+
+    // Verify generated pact.toml contains the project name.
+    let manifest = std::fs::read_to_string(root.join("pact.toml")).expect("pact.toml");
+    assert!(
+        manifest.contains("mylib"),
+        "pact.toml does not contain the project name"
+    );
+    assert!(
+        !manifest.contains("{{name}}"),
+        "pact.toml still contains placeholder"
+    );
+}
+
+/// `pact new my-agent --template agent` creates the expected agent-template
+/// files and the generated `pact.toml` declares `AgentIO`.
+#[test]
+fn new_creates_agent_project() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "my-agent", "--template", "agent"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created agent project 'my-agent'"));
+
+    let root = dir.path().join("my-agent");
+    assert!(root.join("pact.toml").is_file(), "pact.toml missing");
+    assert!(
+        root.join("src").join("main.pact").is_file(),
+        "src/main.pact missing"
+    );
+    assert!(
+        root.join("test").join("main_test.pact").is_file(),
+        "test/main_test.pact missing"
+    );
+    assert!(root.join(".gitignore").is_file(), ".gitignore missing");
+
+    // pact.toml must contain the project name and declare AgentIO.
+    let manifest = std::fs::read_to_string(root.join("pact.toml")).expect("pact.toml");
+    assert!(
+        manifest.contains("my-agent"),
+        "pact.toml does not contain the project name"
+    );
+    assert!(
+        manifest.contains("AgentIO"),
+        "pact.toml does not declare AgentIO"
+    );
+    assert!(
+        !manifest.contains("{{name}}"),
+        "pact.toml still contains placeholder"
+    );
+
+    // src/main.pact must reference AgentIO.
+    let main_src =
+        std::fs::read_to_string(root.join("src").join("main.pact")).expect("src/main.pact");
+    assert!(
+        main_src.contains("AgentIO"),
+        "src/main.pact does not reference AgentIO"
+    );
+    assert!(
+        main_src.contains("seal"),
+        "src/main.pact does not show the seal pattern"
+    );
+    assert!(
+        !main_src.contains("{{name}}"),
+        "src/main.pact still contains placeholder"
+    );
+
+    // test/main_test.pact must mock AgentIO.
+    let test_src = std::fs::read_to_string(root.join("test").join("main_test.pact"))
+        .expect("test/main_test.pact");
+    assert!(
+        test_src.contains("AgentIO"),
+        "test/main_test.pact does not mock AgentIO"
+    );
+    assert!(
+        !test_src.contains("{{name}}"),
+        "test/main_test.pact still contains placeholder"
+    );
+}
+
+/// All generated files must have `{{name}}` replaced with the project name.
+#[test]
+fn new_substitutes_project_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "acme"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let root = dir.path().join("acme");
+
+    let manifest = std::fs::read_to_string(root.join("pact.toml")).expect("pact.toml");
+    assert!(manifest.contains("acme"), "pact.toml missing project name");
+    assert!(
+        !manifest.contains("{{name}}"),
+        "pact.toml still has placeholder"
+    );
+
+    let main_src =
+        std::fs::read_to_string(root.join("src").join("main.pact")).expect("src/main.pact");
+    assert!(
+        main_src.contains("acme"),
+        "src/main.pact missing project name"
+    );
+    assert!(
+        !main_src.contains("{{name}}"),
+        "src/main.pact still has placeholder"
+    );
+
+    let test_src = std::fs::read_to_string(root.join("test").join("main_test.pact"))
+        .expect("test/main_test.pact");
+    assert!(
+        test_src.contains("acme"),
+        "test/main_test.pact missing project name"
+    );
+    assert!(
+        !test_src.contains("{{name}}"),
+        "test/main_test.pact still has placeholder"
+    );
+}
+
+/// Lib template: no `{{name}}` placeholder remains after generation.
+#[test]
+fn new_lib_substitutes_project_name() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "acme-lib", "--template", "lib"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let root = dir.path().join("acme-lib");
+
+    for rel in &["pact.toml", "src/lib.pact", "test/lib_test.pact"] {
+        let content =
+            std::fs::read_to_string(root.join(rel)).unwrap_or_else(|_| panic!("{rel} missing"));
+        assert!(
+            !content.contains("{{name}}"),
+            "{rel} still contains {{{{name}}}} placeholder"
+        );
+        assert!(
+            content.contains("acme-lib"),
+            "{rel} does not contain the project name"
+        );
+    }
+}
+
+/// If the target directory already exists and is non-empty, `pact new` must
+/// fail without `--force`.
+#[test]
+fn new_fails_on_existing_nonempty_dir() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project_dir = dir.path().join("occupied");
+    std::fs::create_dir_all(&project_dir).expect("create dir");
+    std::fs::write(project_dir.join("existing.txt"), b"something").expect("write file");
+
+    pact()
+        .args(["new", "occupied"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("occupied").or(predicate::str::contains("exists")));
+}
+
+/// With `--force`, `pact new` succeeds even when the target directory is
+/// non-empty.
+#[test]
+fn new_force_overwrites_existing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project_dir = dir.path().join("occupied");
+    std::fs::create_dir_all(&project_dir).expect("create dir");
+    std::fs::write(project_dir.join("existing.txt"), b"something").expect("write file");
+
+    pact()
+        .args(["new", "occupied", "--force"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created bin project 'occupied'"));
+
+    assert!(
+        project_dir.join("pact.toml").is_file(),
+        "pact.toml missing after --force"
+    );
+}
+
+/// With `--force` on a directory containing a `src/` subdirectory, template
+/// files overwrite correctly.
+#[test]
+fn new_force_with_existing_src_subdir() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project_dir = dir.path().join("preexisting");
+    std::fs::create_dir_all(project_dir.join("src")).expect("create src dir");
+    std::fs::write(project_dir.join("src").join("old.pact"), b"-- old content")
+        .expect("write old file");
+
+    pact()
+        .args(["new", "preexisting", "--force"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // The template's src/main.pact must have been written.
+    let main_src = std::fs::read_to_string(project_dir.join("src").join("main.pact"))
+        .expect("src/main.pact missing after --force");
+    assert!(
+        main_src.contains("preexisting"),
+        "src/main.pact does not contain project name after --force"
+    );
+}
+
+/// With `--force`, a warning is emitted for foreign files but NOT for top-level
+/// entries that are part of the template (e.g. `src/`).
+#[test]
+fn new_force_warns_about_foreign_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project_dir = dir.path().join("myapp");
+    std::fs::create_dir_all(project_dir.join("src")).expect("create src dir");
+    std::fs::write(project_dir.join("existing.txt"), b"foreign").expect("write foreign file");
+
+    pact()
+        .args(["new", "myapp", "--force"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        // Warning for the foreign file.
+        .stderr(predicate::str::contains("existing.txt"))
+        // No false-positive warning for `src`, which belongs to the template.
+        .stderr(predicate::str::contains("'src'").not());
+}
+
+/// `pact new` on an already-empty directory succeeds without requiring `--force`.
+#[test]
+fn new_succeeds_on_empty_existing_dir() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project_dir = dir.path().join("myapp");
+    std::fs::create_dir_all(&project_dir).expect("create empty dir");
+
+    pact()
+        .args(["new", "myapp"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created bin project 'myapp'"));
+}
+
+/// `pact new` must create the project directory when it does not already exist.
+#[test]
+fn new_creates_parent_dirs() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    pact()
+        .args(["new", "brand-new"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    assert!(
+        dir.path().join("brand-new").is_dir(),
+        "project directory was not created"
+    );
+}
+
+/// `--quiet` suppresses the success message.
+#[test]
+fn new_quiet_suppresses_output() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["--quiet", "new", "silent-app"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+/// The generated `pact.toml` must parse successfully as a [`Manifest`].
+#[test]
+fn new_generated_manifest_is_valid() {
+    use pact_compiler::manifest::Manifest;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "valid-pkg"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let toml_path = dir.path().join("valid-pkg").join("pact.toml");
+    let toml_str = std::fs::read_to_string(&toml_path).expect("pact.toml");
+    let manifest: Manifest = toml_str.parse().expect("manifest parse failed");
+    assert_eq!(manifest.package.name, "valid-pkg");
+    assert_eq!(manifest.package.version, "0.1.0");
+}
+
+/// The generated lib `pact.toml` must parse successfully as a [`Manifest`].
+#[test]
+fn new_lib_generated_manifest_is_valid() {
+    use pact_compiler::manifest::Manifest;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    pact()
+        .args(["new", "valid-lib", "--template", "lib"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let toml_path = dir.path().join("valid-lib").join("pact.toml");
+    let toml_str = std::fs::read_to_string(&toml_path).expect("pact.toml");
+    let manifest: Manifest = toml_str.parse().expect("lib manifest parse failed");
+    assert_eq!(manifest.package.name, "valid-lib");
+    assert_eq!(manifest.package.version, "0.1.0");
+}
+
+/// On Unix, if the target parent directory is read-only, `pact new` must fail.
+#[cfg(unix)]
+#[test]
+fn new_fails_on_readonly_parent_dir() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let readonly_dir = dir.path().join("readonly");
+    std::fs::create_dir_all(&readonly_dir).expect("create readonly dir");
+    std::fs::set_permissions(&readonly_dir, std::fs::Permissions::from_mode(0o555))
+        .expect("set permissions");
+
+    let result = pact()
+        .args(["new", "myproject"])
+        .current_dir(&readonly_dir)
+        .assert()
+        .failure();
+
+    // Restore permissions so tempdir cleanup succeeds.
+    std::fs::set_permissions(&readonly_dir, std::fs::Permissions::from_mode(0o755))
+        .expect("restore permissions");
+
+    result.stderr(predicate::str::is_empty().not());
 }
