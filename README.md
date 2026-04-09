@@ -46,51 +46,38 @@ When you wrap code in a `with bind ...` block, the bound effect gets removed fro
 
 The underlying theory builds on row polymorphism (Rémy, 1989) extended to effects by Leijen's Koka work. But the practical guarantee is simple: the compiler sees everything your function does, tracks it in a set, and enforces that set at every call boundary. Effects in, effects out, nothing hidden.
 
-Here's the full cycle:
+The full cycle:
 
 ```
-                    ┌─────────────────────────────────┐
-                    │         pact Console {           │
-                    │           fun print(...)         │  ◄── DECLARE operations
-                    │           fun read_line(...)     │      (compile-time contract)
-                    │         }                        │
-                    └──────────────┬──────────────────┘
-                                   │
-                    ┌──────────────▼──────────────────┐
-                    │      fun my_app() {              │
-                    │        Console.print("hi")       │  ◄── USE operations
-                    │      }                           │      (compiler infers effect row)
-                    │                                  │
-                    │  inferred: my_app() => ()        │
-                    │            with {Console | r}    │      {Console} added to row
-                    └──────────────┬──────────────────┘
-                                   │
-          ┌────────────────────────┼────────────────────────┐
-          │                        │                        │
-          ▼                        ▼                        ▼
-  ┌───────────────┐    ┌───────────────────┐    ┌──────────────────┐
-  │  bind Console  │    │  bind Console      │    │  No bind provided │
-  │  { print(m)    │    │  { print(m) then   │    │                    │
-  │    then ...    │    │    log_to_file(m)  │    │  Compile error:    │
-  │    real IO     │    │    ...             │    │  "Console not      │
-  │  }             │    │  }                 │    │   bound in scope"  │
-  │                │    │                    │    │                    │
-  │  PRODUCTION    │    │  TESTING / MOCK    │    │  SANDBOXED         │
-  └───────────────┘    └───────────────────┘    └──────────────────┘
-          │                        │
-          ▼                        ▼
-  ┌───────────────────────────────────────────┐
-  │  with console_bind {                       │
-  │      my_app()    ◄── row restriction:      │  ◄── BIND gives meaning
-  │  }                   {Console} removed,    │      (row restriction at
-  │                      remaining row is {}   │       type level)
-  │  Result type: () with {}  (pure!)          │
-  └───────────────────────────────────────────┘
+ 1. DECLARE                    2. USE                        3. BIND
+ ─────────────────          ─────────────────            ─────────────────
+
+ pact Console {              fun my_app() {               fix con = bind Console {
+   fun print(...)              Console.print("hi")          print(m) then
+   fun read_line(...)        }                                resume(io_print(m))
+ }                                                        }
+                             compiler infers:
+ Defines the operations.     my_app => () with {Console}   Decides what print
+ Nothing runs yet.           Console added to the row.     actually does.
+
+
+ 4. APPLY
+ ─────────────────────────────────────────────────────
+
+ with con {              The compiler removes {Console} from the row.
+   my_app()              Remaining row: {}  (empty — pure)
+ }                       my_app can only do what Console allows.
+                         Anything else is a type error.
+
+
+ Three outcomes at step 4:
+
+ with real_console { ... }     Production — actually prints to stdout
+ with mock_console { ... }     Testing — captures output in a list
+ (no bind provided)            Compile error — "Console not bound"
 ```
 
-The function declares what it needs. The type system tracks it. The binding fulfills it. Without a binding, the code doesn't compile. With a binding, the handled effects are removed from the row — what's left is the proof of what can still happen.
-
-The other half is bindings. A pact declares *what operations exist*. A binding decides *what they do*:
+A pact declares *what operations exist*. A binding decides *what they do*:
 
 ```pact
 fix tool_bind = bind AgentIO {
