@@ -153,7 +153,7 @@ pub(crate) enum Commands {
 /// 3. `--verbose` count — selects `warn` / `debug` / `trace`.
 /// 4. Built-in default — `warn`.
 pub(crate) fn build_env_filter(opts: &GlobalOpts) -> EnvFilter {
-    build_env_filter_with(opts, std::env::var("RUST_LOG").ok())
+    build_env_filter_with(opts, std::env::var("RUST_LOG").ok().as_deref())
 }
 
 /// Build an [`EnvFilter`] with an explicit `RUST_LOG` value.
@@ -161,14 +161,21 @@ pub(crate) fn build_env_filter(opts: &GlobalOpts) -> EnvFilter {
 /// Separated from [`build_env_filter`] so tests can exercise the precedence
 /// logic without mutating the process environment (which is racy under
 /// parallel test execution).
-pub(crate) fn build_env_filter_with(opts: &GlobalOpts, rust_log: Option<String>) -> EnvFilter {
+pub(crate) fn build_env_filter_with(opts: &GlobalOpts, rust_log: Option<&str>) -> EnvFilter {
     // Precedence: --quiet > RUST_LOG > --verbose > default
     if opts.quiet {
         return EnvFilter::new("error");
     }
 
-    if let Some(env_val) = rust_log.and_then(|v| EnvFilter::try_new(v).ok()) {
-        return env_val;
+    if let Some(raw) = rust_log {
+        match EnvFilter::try_new(raw) {
+            Ok(filter) => return filter,
+            Err(e) => {
+                // The tracing subscriber is not yet installed when this fires,
+                // so emit directly to stderr rather than via tracing.
+                eprintln!("warning: RUST_LOG value {raw:?} could not be parsed: {e}");
+            }
+        }
     }
 
     let default_level = match opts.verbose {
@@ -598,7 +605,7 @@ mod tests {
             quiet: true,
             ..GlobalOpts::default()
         };
-        let filter = build_env_filter_with(&opts, Some("trace".to_string()));
+        let filter = build_env_filter_with(&opts, Some("trace"));
         assert_eq!(filter.to_string(), "error");
     }
 
@@ -610,7 +617,7 @@ mod tests {
             verbose: 2, // would be "trace" without RUST_LOG
             ..GlobalOpts::default()
         };
-        let filter = build_env_filter_with(&opts, Some("info".to_string()));
+        let filter = build_env_filter_with(&opts, Some("info"));
         assert_eq!(filter.to_string(), "info");
     }
 }

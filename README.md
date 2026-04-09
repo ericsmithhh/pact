@@ -122,7 +122,7 @@ Building from the start:
 
 ## Status
 
-Early stage, actively developed. The workspace and CLI are in place. Parser and type checker are next. Not production-ready — but the foundations are solid and the direction is clear.
+Early stage, actively developed. Workspace, CLI, and manifest parsing are in place. The lexer and parser are next. Not production-ready — but the foundations are solid and the direction is clear.
 
 ```
 cargo build            # debug build
