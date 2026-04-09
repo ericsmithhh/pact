@@ -1,8 +1,6 @@
 # Pact
 
-Pact is a compiled functional language with algebraic effects as a first-class citizen. The core idea: the type system proves what code is allowed to do. If a function's type says it can only call two specific operations, it literally cannot call anything else. Not a runtime sandbox you configure — a compile-time proof embedded in the type.
-
-Why this matters becomes clear when you look at concrete code:
+A compiled functional language with algebraic effects as a first-class citizen. The core idea: the type system proves what code is allowed to do. If a function's type says it can only call two specific operations, it literally cannot call anything else.
 
 ```pact
 pact AgentIO {
@@ -13,26 +11,20 @@ pact AgentIO {
 kind AgentFn = fun() => Json with {AgentIO, Breach(String)}
 ```
 
-That `kind AgentFn` type is a contract. An untrusted agent function with this type physically cannot perform network IO, access the filesystem, or spawn subprocesses. The compiler enforces it. This is genuinely useful for plugins, untrusted modules, or any time you need hard boundaries on what code can do.
+With this type, an untrusted agent cannot perform network IO, access the filesystem, or spawn subprocesses. The compiler enforces it. Not a runtime sandbox—a compile-time proof in the type.
 
 ## Algebraic effects everywhere
 
-Most languages have separate mechanisms for errors, IO, concurrency. Pact unifies them: everything is a pact.
+Errors, IO, concurrency. They're all pacts.
 
-Errors? A pact:
+Errors propagate via the `!` operator:
 
 ```pact
-pact Breach(e) {
-    fun breach(error as e) => Nothing
-}
-
 fix data = read_file("config.toml")!
 fix parsed = Json.parse(data)!
 ```
 
-The `!` operator propagates breaches. If `read_file` returns an error, it breaches. If it succeeds, it unwraps the value. Clean, predictable.
-
-Concurrency? Also a pact:
+Spawn concurrent tasks without function coloring:
 
 ```pact
 fun fetch_all(urls) {
@@ -42,46 +34,15 @@ fun fetch_all(urls) {
 }
 ```
 
-No function coloring. No `async`/`await` virus spreading through your codebase. A spawned task is just a pact operation — the runtime handles scheduling.
+No `async`/`await` spreading through your code. A spawned task is a pact operation—the runtime handles scheduling.
 
 ## How the safety works
 
-A pact is a declaration of what your code needs to do: "I'll need to print to the console and read files, but nothing else." The type system treats this as a hard contract. If you try to make a network call without `Http` in your pact, the compiler rejects it. Not "we recommend you don't." Not "you probably shouldn't." The compiler will not let you express it.
+A pact declares what your code needs: "I'll read files and print to console, nothing else." If you try to make a network call without `Http` in the signature, the compiler rejects it. Not a warning. A rejection.
 
-Think of it like a hotel key card. Your room key only opens your specific door — it physically cannot open other rooms. You don't have to configure anything. You can't accidentally use it on the wrong lock. The key itself is the proof. Pact's type system works the same way: if your function's signature says `with {Console, FileSystem}`, the type itself proves you can only perform those two operations. The compiler won't generate code for anything else.
+Think of a hotel key. It opens one specific door. Can't use it on the wrong lock. The key *is* the proof. Same with types: if your function says `with {Console, FileSystem}`, the type proves you can only perform those operations. The compiler won't generate code for anything else.
 
-This is where binding comes in. A pact declares *what* operations are needed. A binding decides *what they do*. You could bind `Console.print` to actually print to your terminal. Or you could bind it to log to a file. Or to do nothing. Your code doesn't care — it just calls the operation. The binding handles the meaning.
-
-The safety trick: compile-time sandboxing. If you need to run untrusted plugin code that's allowed to read config files and call certain tools (but nothing else), you give it exactly that type:
-
-```pact
-kind PluginFn = fun() => Result with {FileSystem, ToolRegistry, Breach(String)}
-```
-
-That's it. The compiler sees `PluginFn` and knows it's impossible for this code to make network requests, spawn processes, or access anything outside those two operations. Not because you built a runtime jail. Because the type itself is the permission slip.
-
-## Why this design
-
-The row-polymorphic effect system means generic combinators work with any pact set. Write `retry` once, use it everywhere:
-
-```pact
-fun retry(n, action) {
-    when n {
-        0 then action()
-        n then {
-            fix result = catch(action)
-            when result {
-                Ok(v)  then v
-                Err(_) then retry(n - 1, action)
-            }
-        }
-    }
-}
-```
-
-The type system infers that `retry` works with any code, regardless of what pacts it uses. The `| r` row variable in the inferred signature captures "all other pacts" — so `retry` composes freely.
-
-The same machinery powers sandboxing. Bind a pact to control what its operations actually do:
+Operations and bindings are separate. A pact declares *what operations are needed*. A binding decides *what they do*:
 
 ```pact
 fix tool_bind = bind AgentIO {
@@ -102,32 +63,59 @@ with tool_bind {
 }
 ```
 
-The handler decides what `call_tool` means at runtime. The type system decided what `agent()` is allowed to ask for at compile time. Both enforced, both composable.
+Run untrusted code with tight constraints:
+
+```pact
+kind PluginFn = fun() => Result with {FileSystem, ToolRegistry, Breach(String)}
+```
+
+The type is the permission slip. Impossible to escape those bounds—not because of a runtime jail, but because the type itself forbids it.
+
+## Why this design
+
+Row-polymorphic effects let generic combinators work with any pact set. Write `retry` once:
+
+```pact
+fun retry(n, action) {
+    when n {
+        0 then action()
+        n then {
+            fix result = catch(action)
+            when result {
+                Ok(v)  then v
+                Err(_) then retry(n - 1, action)
+            }
+        }
+    }
+}
+```
+
+Use it everywhere. The `| r` row variable captures "all other pacts"—type inference infers this automatically. Composable combinators that work regardless of what effects you're using.
+
+The same machinery powers sandboxing. Bind a pact at runtime to control behavior; the type system controlled scope at compile time. Both enforced, both composable.
 
 ## Compilation and runtime
 
-Cranelift backend for fast compilation. Perceus reference counting for deterministic memory — no GC pauses, values freed immediately when their refcount hits zero. Good for anything latency-sensitive.
+Cranelift backend. Perceus reference counting for deterministic memory—values freed immediately when refcount hits zero, no GC pauses. Good for latency-sensitive work.
 
-Type inference is Hindley-Milner extended with row-polymorphic effects and higher-kinded types. You almost never annotate. Effects are inferred from what your code actually does.
+Type inference is Hindley-Milner with row-polymorphic effects and higher-kinded types. Almost no annotations needed; effects are inferred from what your code actually does.
 
 ## Toolchain
 
-Building from the start:
-
 - **REPL** — interactive exploration
-- **LSP** — hover for inferred types and effect sets, quick fixes
-- **Formatter** — one style, no config
-- **Test runner** — with pact mocking baked in (every effect is automatically mockable)
-- **Tree-sitter grammar** — syntax highlighting in your editor
+- **LSP** — inferred types, effect sets, quick fixes
+- **Formatter** — one style, no options
+- **Test runner** — pact mocking built in (every effect is automatically mockable)
+- **Tree-sitter grammar** — syntax highlighting
 
 ## Status
 
-Early stage, actively developed. Workspace, CLI, and manifest parsing are in place. The lexer and parser are next. Not production-ready — but the foundations are solid and the direction is clear.
+Early stage. Workspace, CLI, and manifest parsing done. Lexer and parser next.
 
 ```
 cargo build            # debug build
-cargo build --release  # optimized build
-cargo test --workspace # run all tests
+cargo build --release  # optimized
+cargo test --workspace # test suite
 ```
 
 Requires Rust stable >= 1.85.
