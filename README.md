@@ -1,120 +1,122 @@
 # Pact
 
-Pact is a natively compiled functional language with **algebraic effects as a first-class citizen**. The killer feature: the type system proves what code is allowed to do.
+Pact is a compiled functional language with algebraic effects as a first-class citizen. The core idea: the type system proves what code is allowed to do. If a function's type says it can only call two specific operations, it literally cannot call anything else. Not a runtime sandbox you configure — a compile-time proof embedded in the type.
 
-If an agent function's type says it can only call two tools, it *literally cannot* call anything else. Not a sandbox you configure — a property of the code itself. Compile-time, proven, zero overhead.
-
-## The Differentiator
-
-No other language gives you this:
+Why this matters becomes clear when you look at concrete code:
 
 ```pact
--- Define what an agent is allowed to do
 pact AgentIO {
     fun call_tool(name as String, args as Json) => Json
     fun log(msg as String) => ()
 }
 
--- This is the ONLY thing an untrusted agent can do
 kind AgentFn = fun() => Json with {AgentIO, Breach(String)}
-
--- The type is the contract. The agent cannot call network, filesystem, 
--- or any other pact. This is proven by the compiler.
-fun run_agent(agent as AgentFn, allowed_tools as Set(String)) => Result(Json, String) {
-    fix tool_bind = bind AgentIO {
-        call_tool(name, args) then {
-            when Set.contains(allowed_tools, name) {
-                True then resume(dispatch_tool(name, args))
-                False then Breach.breach("tool '${name}' not permitted")
-            }
-        }
-        log(msg) then {
-            Console.print("[agent] ${msg}")
-            resume(())
-        }
-    }
-
-    with tool_bind {
-        Ok(agent())
-    }
-}
 ```
 
-This is **mathematically proven sandboxing**. No runtime guards. No "hopefully this checks out." The type system makes the guarantee unbreakable.
+That `kind AgentFn` type is a contract. An untrusted agent function with this type physically cannot perform network IO, access the filesystem, or spawn subprocesses. The compiler enforces it. This is genuinely useful for plugins, untrusted modules, or any time you need hard boundaries on what code can do.
 
-## One System for Everything
+## Algebraic effects everywhere
 
-Algebraic effects unify IO, concurrency, errors, and sandboxing. No function coloring. No async/await virus spreading through your codebase.
+Most languages have separate mechanisms for errors, IO, concurrency. Pact unifies them: everything is a pact.
+
+Errors? A pact:
 
 ```pact
--- Errors are pacts
 pact Breach(e) {
     fun breach(error as e) => Nothing
 }
 
--- Concurrency is a pact
-pact Async {
-    fun spawn(task as fun() => a) => Future(a)
-    fun await(future as Future(a)) => a
-}
-
--- The ! operator propagates breaches
 fix data = read_file("config.toml")!
 fix parsed = Json.parse(data)!
+```
 
--- Regular functions, no coloring
+The `!` operator propagates breaches. If `read_file` returns an error, it breaches. If it succeeds, it unwraps the value. Clean, predictable.
+
+Concurrency? Also a pact:
+
+```pact
 fun fetch_all(urls) {
-    urls >> map(fun(url) {
-        Async.spawn(fun() { Http.request("GET", url, None) })
-    }) >> map(Async.await)
+    urls
+        >> map(fun(url) { Async.spawn(fun() { Http.request("GET", url, None) }) })
+        >> map(Async.await)
 }
 ```
 
-Row-polymorphic effect rows mean your generic combinators work with *any* pact set. Write `retry` once, use it everywhere.
+No function coloring. No `async`/`await` virus spreading through your codebase. A spawned task is just a pact operation — the runtime handles scheduling.
 
-## Native Compiled, Predictable
+## Why this design
 
-- **Cranelift backend** — fast compilation, correct codegen
-- **Perceus reference counting** — no GC pauses, deterministic latency
-- **Inference-first type system** — Hindley-Milner + row effects + higher-kinded types. You almost never write types.
+The row-polymorphic effect system means generic combinators work with any pact set. Write `retry` once, use it everywhere:
 
-The type system is powerful enough that you declare effects, contracts, and capabilities once. The compiler infers the rest.
+```pact
+fun retry(n, action) {
+    when n {
+        0 then action()
+        n then {
+            fix result = catch(action)
+            when result {
+                Ok(v)  then v
+                Err(_) then retry(n - 1, action)
+            }
+        }
+    }
+}
+```
 
-## Practical Toolchain
+The type system infers that `retry` works with any code, regardless of what pacts it uses. The `| r` row variable in the inferred signature captures "all other pacts" — so `retry` composes freely.
 
-Shipped from day one:
+The same machinery powers sandboxing. Bind a pact to control what its operations actually do:
 
-- **REPL** — explore and prototype interactively
-- **LSP** — IDE integration (hover for inferred types, effect inspector, quick fixes)
-- **Formatter** — one canonical style, zero config
-- **Test runner** — with pact mocking (every effect is mockable)
-- **Tree-sitter grammar** — syntax highlighting in Neovim, Helix, VS Code
+```pact
+fix tool_bind = bind AgentIO {
+    call_tool(name, args) then {
+        when Set.contains(allowed, name) {
+            True  then resume(dispatch(name, args))
+            False then Breach.breach("not permitted: ${name}")
+        }
+    }
+    log(msg) then {
+        Console.print("[agent] ${msg}")
+        resume(())
+    }
+}
+
+with tool_bind {
+    agent()
+}
+```
+
+The handler decides what `call_tool` means at runtime. The type system decided what `agent()` is allowed to ask for at compile time. Both enforced, both composable.
+
+## Compilation and runtime
+
+Cranelift backend for fast compilation. Perceus reference counting for deterministic memory — no GC pauses, values freed immediately when their refcount hits zero. Good for anything latency-sensitive.
+
+Type inference is Hindley-Milner extended with row-polymorphic effects and higher-kinded types. You almost never annotate. Effects are inferred from what your code actually does.
+
+## Toolchain
+
+Building from the start:
+
+- **REPL** — interactive exploration
+- **LSP** — hover for inferred types and effect sets, quick fixes
+- **Formatter** — one style, no config
+- **Test runner** — with pact mocking baked in (every effect is automatically mockable)
+- **Tree-sitter grammar** — syntax highlighting in your editor
 
 ## Status
 
-Early-stage, actively developed. The workspace layout, crate boundaries, and error-handling conventions are in place. The lexer, parser, and type checker are under construction.
+Early stage, actively developed. The workspace and CLI are in place. Parser and type checker are next. Not production-ready — but the foundations are solid and the direction is clear.
 
 ```
 cargo build            # debug build
-cargo build --release  # optimised build
+cargo build --release  # optimized build
 cargo test --workspace # run all tests
 ```
 
-Requires Rust stable ≥ 1.85.
+Requires Rust stable >= 1.85.
 
-## Why Pact
-
-You build systems that need correctness. Not "mostly correct" — provably correct. And you want to stay sane while doing it.
-
-Pact gives you a type system that makes impossible states unrepresentable. It gives you one elegant mechanism (pacts) instead of ten special cases. And it compiles to fast, predictable native code.
-
-Most importantly: when you deploy an untrusted agent, you don't have to trust it. The type system does.
-
-## Learn More
-
-Full language specification: `.ai/2026-04-09-pact-language-design.md`
-
-Crate structure:
+## Crate structure
 
 | Crate | Role |
 |---|---|
