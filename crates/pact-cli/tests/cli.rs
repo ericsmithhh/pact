@@ -27,7 +27,8 @@ fn version_flag_prints_version() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")))
+        .stderr(predicate::str::is_empty());
 }
 
 /// `pact --help` must succeed and mention every subcommand.
@@ -37,6 +38,7 @@ fn help_lists_all_subcommands() {
         .arg("--help")
         .assert()
         .success()
+        .stderr(predicate::str::is_empty())
         .get_output()
         .stdout
         .clone();
@@ -50,7 +52,7 @@ fn help_lists_all_subcommands() {
     }
 }
 
-/// `pact` with no arguments prints help to stderr.
+/// `pact` with no arguments exits with code 2 and writes help to stderr.
 ///
 /// clap's `arg_required_else_help = true` exits with code 2 and writes the
 /// help text to stderr; that is the canonical clap behaviour.
@@ -58,26 +60,47 @@ fn help_lists_all_subcommands() {
 fn no_args_prints_help() {
     pact()
         .assert()
-        .failure()
+        .code(2)
         .stderr(predicate::str::contains("Usage"));
 }
 
 /// `-v` is accepted without error.
 #[test]
 fn verbose_flag_accepted() {
-    pact().args(["-v", "--help"]).assert().success();
+    pact()
+        .args(["-v", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 /// `-vv` (two repetitions) is accepted without error.
 #[test]
 fn double_verbose_flag_accepted() {
-    pact().args(["-vv", "--help"]).assert().success();
+    pact()
+        .args(["-vv", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 /// `-q` / `--quiet` is accepted without error.
 #[test]
 fn quiet_flag_accepted() {
-    pact().args(["-q", "--help"]).assert().success();
+    pact()
+        .args(["-q", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
+}
+
+/// `--quiet` and `--verbose` together must produce exit code 2.
+#[test]
+fn quiet_and_verbose_conflict_fails() {
+    pact()
+        .args(["--quiet", "--verbose", "build"])
+        .assert()
+        .code(2);
 }
 
 /// `--color always` is accepted without error.
@@ -86,7 +109,8 @@ fn color_always_accepted() {
     pact()
         .args(["--color", "always", "--help"])
         .assert()
-        .success();
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 /// `--color never` is accepted without error.
@@ -95,7 +119,8 @@ fn color_never_accepted() {
     pact()
         .args(["--color", "never", "--help"])
         .assert()
-        .success();
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 /// `--color auto` is accepted without error.
@@ -104,7 +129,8 @@ fn color_auto_accepted() {
     pact()
         .args(["--color", "auto", "--help"])
         .assert()
-        .success();
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 /// An invalid `--color` value must produce a non-zero exit code.
@@ -115,6 +141,26 @@ fn color_invalid_value_fails() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("rainbow").or(predicate::str::contains("color")));
+}
+
+/// `--target-dir /tmp/pact-test-out` is accepted without error.
+#[test]
+fn target_dir_flag_accepted() {
+    pact()
+        .args(["--target-dir", "/tmp/pact-test-out", "build"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+/// `--target-dir` on a subcommand (global flag after subcommand name) works.
+#[test]
+fn target_dir_after_subcommand_accepted() {
+    pact()
+        .args(["build", "--target-dir", "/tmp/pact-test-out"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -128,13 +174,27 @@ fn build_subcommand_succeeds() {
         .arg("build")
         .assert()
         .success()
-        .stdout(predicate::str::contains("compiling"));
+        .stdout(predicate::str::is_empty());
+}
+
+/// `pact build --release` is accepted without error.
+#[test]
+fn build_release_flag_accepted() {
+    pact()
+        .args(["build", "--release"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 /// `pact build --help` works.
 #[test]
 fn build_help_works() {
-    pact().args(["build", "--help"]).assert().success();
+    pact()
+        .args(["build", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -144,13 +204,31 @@ fn build_help_works() {
 /// `pact run` is recognised and runs without error.
 #[test]
 fn run_subcommand_succeeds() {
-    pact().arg("run").assert().success();
+    pact()
+        .arg("run")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+/// `pact run --release` is accepted without error.
+#[test]
+fn run_release_flag_accepted() {
+    pact()
+        .args(["run", "--release"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 /// `pact run --help` works.
 #[test]
 fn run_help_works() {
-    pact().args(["run", "--help"]).assert().success();
+    pact()
+        .args(["run", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 /// Arguments after `--` are accepted as passthrough args.
@@ -159,7 +237,8 @@ fn run_passthrough_args_accepted() {
     pact()
         .args(["run", "--", "foo", "--bar"])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -169,33 +248,45 @@ fn run_passthrough_args_accepted() {
 /// `pact check` is recognised and runs without error.
 #[test]
 fn check_subcommand_succeeds() {
-    pact().arg("check").assert().success();
+    pact()
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 /// `pact check --help` works.
 #[test]
 fn check_help_works() {
-    pact().args(["check", "--help"]).assert().success();
+    pact()
+        .args(["check", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 // ---------------------------------------------------------------------------
 // `pact repl`
 // ---------------------------------------------------------------------------
 
-/// `pact repl` is recognised and prints a "not yet implemented" message.
+/// `pact repl` is recognised and exits successfully.
 #[test]
-fn repl_subcommand_prints_not_implemented() {
+fn repl_subcommand_succeeds() {
     pact()
         .arg("repl")
         .assert()
         .success()
-        .stdout(predicate::str::contains("not yet implemented"));
+        .stdout(predicate::str::is_empty());
 }
 
 /// `pact repl --help` works.
 #[test]
 fn repl_help_works() {
-    pact().args(["repl", "--help"]).assert().success();
+    pact()
+        .args(["repl", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -205,13 +296,31 @@ fn repl_help_works() {
 /// `pact fmt` is recognised and runs without error.
 #[test]
 fn fmt_subcommand_succeeds() {
-    pact().arg("fmt").assert().success();
+    pact()
+        .arg("fmt")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+/// `pact fmt --check` is accepted without error.
+#[test]
+fn fmt_check_flag_accepted() {
+    pact()
+        .args(["fmt", "--check"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 /// `pact fmt --help` works.
 #[test]
 fn fmt_help_works() {
-    pact().args(["fmt", "--help"]).assert().success();
+    pact()
+        .args(["fmt", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 /// `pact fmt path/to/file.pact` accepts file path arguments.
@@ -220,7 +329,8 @@ fn fmt_file_paths_accepted() {
     pact()
         .args(["fmt", "foo.pact", "bar.pact"])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -230,19 +340,31 @@ fn fmt_file_paths_accepted() {
 /// `pact test` is recognised and runs without error.
 #[test]
 fn test_subcommand_succeeds() {
-    pact().arg("test").assert().success();
+    pact()
+        .arg("test")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 /// `pact test --help` works.
 #[test]
 fn test_help_works() {
-    pact().args(["test", "--help"]).assert().success();
+    pact()
+        .args(["test", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
 
 /// `pact test my_filter` accepts an optional filter argument.
 #[test]
 fn test_filter_accepted() {
-    pact().args(["test", "my_filter"]).assert().success();
+    pact()
+        .args(["test", "my_filter"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 // ---------------------------------------------------------------------------
@@ -252,7 +374,11 @@ fn test_filter_accepted() {
 /// `pact new myproject` accepts a project name and exits successfully.
 #[test]
 fn new_subcommand_accepts_name() {
-    pact().args(["new", "myproject"]).assert().success();
+    pact()
+        .args(["new", "myproject"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
 }
 
 /// `pact new` without a name must fail with a useful error.
@@ -265,17 +391,42 @@ fn new_without_name_fails() {
         .stderr(predicate::str::contains("name").or(predicate::str::contains("<NAME>")));
 }
 
-/// `pact new myproject --template lib` accepts the `--template` flag.
+/// `pact new myproject --template lib` accepts the `lib` template.
 #[test]
-fn new_with_template_flag() {
+fn new_with_template_lib() {
     pact()
         .args(["new", "myproject", "--template", "lib"])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+/// `pact new myproject --template bin` accepts the `bin` template.
+#[test]
+fn new_with_template_bin() {
+    pact()
+        .args(["new", "myproject", "--template", "bin"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+/// An invalid template value produces a non-zero exit code.
+#[test]
+fn new_invalid_template_fails() {
+    pact()
+        .args(["new", "myproject", "--template", "widget"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("widget").or(predicate::str::contains("template")));
 }
 
 /// `pact new --help` works.
 #[test]
 fn new_help_works() {
-    pact().args(["new", "--help"]).assert().success();
+    pact()
+        .args(["new", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::is_empty());
 }
