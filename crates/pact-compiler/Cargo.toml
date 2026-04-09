@@ -13,6 +13,11 @@ pact-syntax.workspace     = true
 pact-diagnostic.workspace = true
 
 thiserror.workspace = true
+serde      = { workspace = true }
+toml       = { workspace = true }
+
+[dev-dependencies]
+insta.workspace = true
 
 [lints]
 workspace = true

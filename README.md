@@ -44,6 +44,22 @@ fun fetch_all(urls) {
 
 No function coloring. No `async`/`await` virus spreading through your codebase. A spawned task is just a pact operation — the runtime handles scheduling.
 
+## How the safety works
+
+A pact is a declaration of what your code needs to do: "I'll need to print to the console and read files, but nothing else." The type system treats this as a hard contract. If you try to make a network call without `Http` in your pact, the compiler rejects it. Not "we recommend you don't." Not "you probably shouldn't." The compiler will not let you express it.
+
+Think of it like a hotel key card. Your room key only opens your specific door — it physically cannot open other rooms. You don't have to configure anything. You can't accidentally use it on the wrong lock. The key itself is the proof. Pact's type system works the same way: if your function's signature says `with {Console, FileSystem}`, the type itself proves you can only perform those two operations. The compiler won't generate code for anything else.
+
+This is where binding comes in. A pact declares *what* operations are needed. A binding decides *what they do*. You could bind `Console.print` to actually print to your terminal. Or you could bind it to log to a file. Or to do nothing. Your code doesn't care — it just calls the operation. The binding handles the meaning.
+
+The safety trick: compile-time sandboxing. If you need to run untrusted plugin code that's allowed to read config files and call certain tools (but nothing else), you give it exactly that type:
+
+```pact
+kind PluginFn = fun() => Result with {FileSystem, ToolRegistry, Breach(String)}
+```
+
+That's it. The compiler sees `PluginFn` and knows it's impossible for this code to make network requests, spawn processes, or access anything outside those two operations. Not because you built a runtime jail. Because the type itself is the permission slip.
+
 ## Why this design
 
 The row-polymorphic effect system means generic combinators work with any pact set. Write `retry` once, use it everywhere:
@@ -106,7 +122,7 @@ Building from the start:
 
 ## Status
 
-Early stage, actively developed. The workspace and CLI are in place. Parser and type checker are next. Not production-ready — but the foundations are solid and the direction is clear.
+Early stage, actively developed. Workspace, CLI, and manifest parsing are in place. The lexer and parser are next. Not production-ready — but the foundations are solid and the direction is clear.
 
 ```
 cargo build            # debug build

@@ -153,9 +153,29 @@ pub(crate) enum Commands {
 /// 3. `--verbose` count — selects `warn` / `debug` / `trace`.
 /// 4. Built-in default — `warn`.
 pub(crate) fn build_env_filter(opts: &GlobalOpts) -> EnvFilter {
-    // `--quiet` > `RUST_LOG` > `--verbose` > default
+    build_env_filter_with(opts, std::env::var("RUST_LOG").ok().as_deref())
+}
+
+/// Build an [`EnvFilter`] with an explicit `RUST_LOG` value.
+///
+/// Separated from [`build_env_filter`] so tests can exercise the precedence
+/// logic without mutating the process environment (which is racy under
+/// parallel test execution).
+pub(crate) fn build_env_filter_with(opts: &GlobalOpts, rust_log: Option<&str>) -> EnvFilter {
+    // Precedence: --quiet > RUST_LOG > --verbose > default
     if opts.quiet {
         return EnvFilter::new("error");
+    }
+
+    if let Some(raw) = rust_log {
+        match EnvFilter::try_new(raw) {
+            Ok(filter) => return filter,
+            Err(e) => {
+                // The tracing subscriber is not yet installed when this fires,
+                // so emit directly to stderr rather than via tracing.
+                eprintln!("warning: RUST_LOG value {raw:?} could not be parsed: {e}");
+            }
+        }
     }
 
     let default_level = match opts.verbose {
@@ -163,7 +183,7 @@ pub(crate) fn build_env_filter(opts: &GlobalOpts) -> EnvFilter {
         1 => "debug",
         _ => "trace",
     };
-    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level))
+    EnvFilter::new(default_level)
 }
 
 /// Initialise `tracing-subscriber` according to the global options.
@@ -522,12 +542,11 @@ mod tests {
 
     // --- build_env_filter ---------------------------------------------------
 
-    /// Default opts → warn level.
+    /// Default opts, no `RUST_LOG` → warn level.
     #[test]
     fn env_filter_default_is_warn() {
         let opts = GlobalOpts::default();
-        let filter = build_env_filter(&opts);
-        // Render the filter to string and check it contains "warn".
+        let filter = build_env_filter_with(&opts, None);
         assert_eq!(filter.to_string(), "warn");
     }
 
@@ -538,7 +557,7 @@ mod tests {
             quiet: true,
             ..GlobalOpts::default()
         };
-        let filter = build_env_filter(&opts);
+        let filter = build_env_filter_with(&opts, None);
         assert_eq!(filter.to_string(), "error");
     }
 
@@ -549,7 +568,7 @@ mod tests {
             verbose: 1,
             ..GlobalOpts::default()
         };
-        let filter = build_env_filter(&opts);
+        let filter = build_env_filter_with(&opts, None);
         assert_eq!(filter.to_string(), "debug");
     }
 
@@ -560,7 +579,7 @@ mod tests {
             verbose: 2,
             ..GlobalOpts::default()
         };
-        let filter = build_env_filter(&opts);
+        let filter = build_env_filter_with(&opts, None);
         assert_eq!(filter.to_string(), "trace");
     }
 
@@ -571,7 +590,7 @@ mod tests {
             verbose: 3,
             ..GlobalOpts::default()
         };
-        let filter = build_env_filter(&opts);
+        let filter = build_env_filter_with(&opts, None);
         assert_eq!(filter.to_string(), "trace");
     }
 
@@ -581,46 +600,24 @@ mod tests {
     /// takes absolute precedence over environment variables.
     /// Regression: review found that `RUST_LOG=trace` could override `--quiet`.
     #[test]
-    #[allow(unsafe_code)] // REASON: set_var is unsafe in edition 2024; test is single-threaded
     fn env_filter_quiet_overrides_rust_log() {
-        // SAFETY: test is single-threaded via cargo test's default.
-        // set_var/remove_var are unsafe in edition 2024 due to thread-safety
-        // concerns, but test isolation makes this safe here.
-        let prev = std::env::var("RUST_LOG").ok();
-        unsafe { std::env::set_var("RUST_LOG", "trace") };
-
         let opts = GlobalOpts {
             quiet: true,
             ..GlobalOpts::default()
         };
-        let filter = build_env_filter(&opts);
+        let filter = build_env_filter_with(&opts, Some("trace"));
         assert_eq!(filter.to_string(), "error");
-
-        match prev {
-            Some(val) => unsafe { std::env::set_var("RUST_LOG", val) },
-            None => unsafe { std::env::remove_var("RUST_LOG") },
-        }
     }
 
     /// `RUST_LOG` overrides `--verbose` when not quiet.
     /// Regression: ensures the documented precedence holds.
     #[test]
-    #[allow(unsafe_code)] // REASON: set_var is unsafe in edition 2024; test is single-threaded
     fn env_filter_rust_log_overrides_verbose_when_not_quiet() {
-        // SAFETY: see env_filter_quiet_overrides_rust_log.
-        let prev = std::env::var("RUST_LOG").ok();
-        unsafe { std::env::set_var("RUST_LOG", "info") };
-
         let opts = GlobalOpts {
             verbose: 2, // would be "trace" without RUST_LOG
             ..GlobalOpts::default()
         };
-        let filter = build_env_filter(&opts);
+        let filter = build_env_filter_with(&opts, Some("info"));
         assert_eq!(filter.to_string(), "info");
-
-        match prev {
-            Some(val) => unsafe { std::env::set_var("RUST_LOG", val) },
-            None => unsafe { std::env::remove_var("RUST_LOG") },
-        }
     }
 }
