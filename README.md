@@ -1,7 +1,5 @@
 # Pact
 
-A compiled functional language with algebraic effects as a first-class citizen. The core idea: the type system proves what code is allowed to do. If a function's type says it can only call two specific operations, it literally cannot call anything else.
-
 ```pact
 pact AgentIO {
     fun call_tool(name as String, args as Json) => Json
@@ -11,40 +9,19 @@ pact AgentIO {
 kind AgentFn = fun() => Json with {AgentIO, Breach(String)}
 ```
 
-With this type, an untrusted agent cannot perform network IO, access the filesystem, or spawn subprocesses. The compiler enforces it. Not a runtime sandbox—a compile-time proof in the type.
+That type up there? It's a cage. A function wearing it can't touch the filesystem. Can't dial out over the network. Can't spawn processes. Not because you wrapped it in Docker or bolted on a seccomp filter — because the type itself won't allow it. The compiler draws the line.
 
-## Algebraic effects everywhere
-
-Errors, IO, concurrency. They're all pacts.
-
-Errors propagate via the `!` operator:
-
-```pact
-fix data = read_file("config.toml")!
-fix parsed = Json.parse(data)!
-```
-
-Spawn concurrent tasks without function coloring:
-
-```pact
-fun fetch_all(urls) {
-    urls
-        >> map(fun(url) { Async.spawn(fun() { Http.request("GET", url, None) }) })
-        >> map(Async.await)
-}
-```
-
-No `async`/`await` spreading through your code. A spawned task is a pact operation—the runtime handles scheduling.
+Pact tracks every side effect through the type system using algebraic effects — we call them *pacts*. IO, networking, concurrency, errors: each one surfaces in the function's type signature, inferred automatically. You wire up a pact through a binding. Leave it unwired and your program doesn't compile. Simple as that.
 
 ## How the safety works
 
-You deploy an agent. It has access to tools. Somewhere in the back of your mind: *what if it calls something I didn't authorize?* You've got runtime guards, maybe a container, maybe permission checks you wrote and hope are correct. The enforcement lives somewhere else — separate from the code, easy to misconfigure, invisible when it fails.
+Every function gets an effect row — think of it like a receipt. The compiler watches what you call. Drop in `Console.print(...)` and `Console` lands on the receipt. Hit `Http.request(...)` too, now you're carrying `{Console, Http}`. You never write this down. The compiler builds it by reading your code.
 
-Pact moves that enforcement into the type system. The compiler walks every function, sees every operation it performs, and tracks them in a set called an effect row. You don't annotate this. The compiler infers it from the actual code. If your function calls `Console.print(...)`, the set gets `{Console}`. If it also calls `Http.request(...)`, you get `{Console, Http}`. That set is then a hard constraint — try calling an operation that isn't in the set, and the compiler rejects it. Same mechanism as a type mismatch. Not a new concept, not a special sandbox mode. Just type checking.
+Here's the trick. That receipt is also a fence. Call something that isn't on it? Type error. Won't compile. Same rejection you'd get trying to add a number to a string. Nothing fancy going on — just the type checker doing what type checkers do.
 
-Here's where it gets interesting. When you provide a binding with `with bind ...`, the compiler *removes* that effect from the row. What's left is exactly what the code can still do. If you bind everything, the remaining set is empty — pure code. If you only bind `AgentIO`, the code can only perform agent operations. The row is computed, not declared. You can't forget to update it. You can't misconfigure it. It's derived from the code itself.
+Bindings are where it gets fun. When you bind a pact, you're telling the compiler what those operations actually *do* — and that pact drops off the row. Whatever remains is everything the code can still touch. Bind all of them and the row empties out: pure code. Only bind `AgentIO` and you've locked the code into agent-land. No escape hatch, because the row isn't something you declared and might forget to update. It grows from the operations themselves.
 
-This is what actual control over untrusted code looks like:
+Watch it in action:
 
 ```pact
 fix tool_bind = bind AgentIO {
@@ -65,21 +42,19 @@ with tool_bind {
 }
 ```
 
-The binding decides what `call_tool` does — and gates it. The type system decided what `agent()` is allowed to *ask for* before the code ever ran. Swap `tool_bind` for a mock and you're testing. Remove it entirely and you get a compile error. Three deployments from the same code, all enforced.
+Drop in a different binding for tests — suddenly you're mocking. Yank the binding out entirely — the compiler flags every unhandled operation. Three deployment modes from identical code.
 
-And this line:
+One line defines a plugin's entire security surface:
 
 ```pact
 kind PluginFn = fun() => Result with {FileSystem, ToolRegistry, Breach(String)}
 ```
 
-That's the whole security contract. If the code inside tries to call `Http.request()`, it's a compile error — the same kind you'd get from `1 + "hello"`. Not a guard you hope works. A type error, caught before the binary exists.
+No network access. No subprocess spawning. Not by policy. By type.
 
-The theory behind this is row polymorphism extended to effects (Rémy, Leijen/Koka). But you don't need to know that to use it. You write code, the compiler tracks what it does, and the types enforce the boundary. That's the entire model.
+## Composability
 
-## Why this design
-
-Row-polymorphic effects let generic combinators work with any pact set. Write `retry` once:
+Write `retry` once. Use it with anything.
 
 ```pact
 fun retry(n, action) {
@@ -96,44 +71,67 @@ fun retry(n, action) {
 }
 ```
 
-Use it everywhere. The `| r` row variable captures "all other pacts"—type inference infers this automatically. Composable combinators that work regardless of what effects you're using.
+Behind the scenes, the inferred `| r` row variable scoops up "everything else." So `retry` snaps together with code doing HTTP, file access, console output — whatever you throw at it. You don't thread effect types through by hand. Row polymorphism carries them.
 
-The same machinery powers sandboxing. Bind a pact at runtime to control behavior; the type system controlled scope at compile time. Both enforced, both composable.
+That same plumbing drives sandboxing. Bindings steer behavior at runtime. Types fence scope at compile time. Two angles, one mechanism.
 
-## Compilation and runtime
+## Effects everywhere
 
-Cranelift backend. Perceus reference counting for deterministic memory—values freed immediately when refcount hits zero, no GC pauses. Good for latency-sensitive work.
+Errors, IO, concurrency — all pacts.
 
-Type inference is Hindley-Milner with row-polymorphic effects and higher-kinded types. Almost no annotations needed; effects are inferred from what your code actually does.
+```pact
+fix data = read_file("config.toml")!
+fix parsed = Json.parse(data)!
+```
 
-## Toolchain
+```pact
+fun fetch_all(urls) {
+    urls
+        >> map(fun(url) { Async.spawn(fun() { Http.request("GET", url, None) }) })
+        >> map(Async.await)
+}
+```
 
-- **REPL** — interactive exploration
-- **LSP** — inferred types, effect sets, quick fixes
-- **Formatter** — one style, no options
-- **Test runner** — pact mocking built in (every effect is automatically mockable)
-- **Tree-sitter grammar** — syntax highlighting
+`!` is shorthand for the `Breach` pact. Concurrency is just another pact too — no function coloring, no async/await slicing your codebase in two.
+
+## Under the hood
+
+Cranelift handles codegen. Perceus reference counting handles memory — no garbage collector, values freed the instant their refcount hits zero. One-shot continuations keep the refcount model honest.
+
+Type inference is Hindley-Milner stretched to cover row-polymorphic effects and higher-kinded types. Annotate at module boundaries for separate compilation. Everything else gets inferred.
+
+## Tooling
+
+- REPL for poking around
+- LSP that shows effect rows on hover, plus quick fixes
+- Formatter — one style, zero arguments
+- Test runner with pact mocking baked in (every effect is mockable by default)
+- Tree-sitter grammar for syntax highlighting
 
 ## Status
 
-Early stage. Workspace, CLI, and manifest parsing done. Lexer and parser next.
+Early. Workspace, CLI, and manifest parsing are done. Lexer and parser are next.
 
 ```
-cargo build            # debug build
+cargo build            # debug
 cargo build --release  # optimized
-cargo test --workspace # test suite
+cargo test --workspace # everything
 ```
 
-Requires Rust stable >= 1.85.
+Rust stable >= 1.85.
 
 ## Crate structure
 
 | Crate | Role |
 |---|---|
-| `pact-cli` | Binary entry point; `pact <subcommand>` dispatch |
-| `pact-syntax` | Lexer, parser, concrete syntax tree |
-| `pact-compiler` | Name resolution, type inference, code generation |
-| `pact-interpreter` | Tree-walking interpreter for REPL and tests |
-| `pact-fmt` | Source formatter |
+| `pact-cli` | Entry point — `pact <subcommand>` dispatch |
+| `pact-syntax` | Lexer, parser, CST |
+| `pact-compiler` | Name resolution, type inference, codegen |
+| `pact-interpreter` | Tree-walking interpreter for the REPL and test oracle |
+| `pact-fmt` | Formatter |
 | `pact-lsp` | LSP server |
-| `pact-diagnostic` | Shared diagnostic data model |
+| `pact-diagnostic` | Shared diagnostic types |
+
+## Where this is going
+
+Row polymorphism (Rémy), algebraic effects (Leijen/Koka), evidence-passing compilation. Building through it piece by piece. The interesting problem is effect lowering via evidence passing instead of CPS — that's where Pact either gets fast or stays a toy.
