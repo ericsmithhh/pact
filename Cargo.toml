@@ -1,0 +1,91 @@
+[workspace]
+members = [
+    "crates/pact-cli",
+    "crates/pact-compiler",
+    "crates/pact-interpreter",
+    "crates/pact-lsp",
+    "crates/pact-fmt",
+    "crates/pact-diagnostic",
+    "crates/pact-syntax",
+]
+resolver = "2"
+
+[workspace.package]
+version       = "0.1.0"
+edition       = "2024"
+rust-version  = "1.85"
+license       = "MIT OR Apache-2.0"
+repository    = "https://github.com/ericprud/pact"
+authors       = ["The Pact Contributors"]
+
+# ---------------------------------------------------------------------------
+# Shared dependencies — crates reference these with `dep.workspace = true`
+# ---------------------------------------------------------------------------
+[workspace.dependencies]
+# Sibling crates
+pact-compiler    = { path = "crates/pact-compiler" }
+pact-interpreter = { path = "crates/pact-interpreter" }
+pact-lsp         = { path = "crates/pact-lsp" }
+pact-fmt         = { path = "crates/pact-fmt" }
+pact-diagnostic  = { path = "crates/pact-diagnostic" }
+pact-syntax      = { path = "crates/pact-syntax" }
+
+# Error handling
+anyhow    = "1"
+thiserror = "2"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialisation
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml       = "0.8"
+
+# Paths
+camino = "1"
+
+# Logging / tracing
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "ansi"] }
+
+# Testing (dev-only; crates opt in with `dep.workspace = true`)
+assert_cmd = "2"
+insta      = "1"
+
+# ---------------------------------------------------------------------------
+# Workspace-wide lint configuration
+# ---------------------------------------------------------------------------
+[workspace.lints.rust]
+# SAFETY: Specific crates (e.g., a future `pact-codegen`) may override this
+# lint with `[lints.rust] unsafe_code = "allow"` in their own Cargo.toml,
+# accompanied by a documented safety rationale for each `unsafe` block.
+unsafe_code         = "deny"
+missing_docs        = "deny"
+# Warn on all future-incompatibility lints
+future_incompatible = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+pedantic                = { level = "warn", priority = -1 }
+# Allow a few pedantic lints that generate too much noise in a compiler
+module_name_repetitions = "allow"
+missing_errors_doc      = "allow"
+missing_panics_doc      = "allow"
+
+# ---------------------------------------------------------------------------
+# Build profiles
+# ---------------------------------------------------------------------------
+[profile.dev]
+opt-level = 1
+debug     = true
+
+[profile.release]
+opt-level      = 3
+lto            = "thin"
+codegen-units  = 1
+strip          = "debuginfo"
+
+[profile.release-with-debug]
+inherits = "release"
+debug    = true
+strip    = false

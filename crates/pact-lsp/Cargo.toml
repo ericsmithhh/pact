@@ -1,0 +1,16 @@
+[package]
+name        = "pact-lsp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Language Server Protocol server for the Pact language, providing editor integration (completions, hover, diagnostics, go-to-definition, rename)."
+
+[dependencies]
+pact-compiler.workspace   = true
+pact-syntax.workspace     = true
+pact-diagnostic.workspace = true
+
+thiserror.workspace = true
+
+[lints]
+workspace = true

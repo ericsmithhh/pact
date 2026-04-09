@@ -1,0 +1,15 @@
+[package]
+name    = "pact-interpreter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tree-walking interpreter for the Pact language, used by the REPL and as the correctness oracle for the compiler test suite."
+
+[dependencies]
+pact-compiler.workspace   = true
+pact-diagnostic.workspace = true
+
+thiserror.workspace = true
+
+[lints]
+workspace = true

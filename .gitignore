@@ -1,0 +1,105 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor / IDE
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.iml
+.project
+.settings/
+.classpath
+*.sublime-project
+*.sublime-workspace
+
+# Rust / Cargo (for the compiler)
+target/
+**/*.rs.bk
+# Cargo.lock is intentionally tracked — this workspace produces a binary.
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Environment
+.env
+.env.*
+
+# Claude Code / AI assistant artifacts
+.claude/
+.claude_*
+claude_output*
+.anthropic/
+.ai/
+
+# Claude Code settings and state
+CLAUDE.md
+.clauderc
+.claude.json
+.claude-settings
+.claude-project
+claude.config.*
+
+# Cursor AI
+.cursorignore
+.cursorrc
+.cursorrules
+.cursor/
+
+# GitHub Copilot
+.copilot/
+.copilot-*
+copilot-*
+
+# Windsurf / Codeium
+.codeium/
+.windsurf/
+.windsurfrules
+
+# Aider
+.aider*
+
+# Continue.dev
+.continue/
+.continuerc*
+
+# Cline / Roo Code
+.cline/
+.clinerules
+.roomodes
+.roo/
+
+# Amazon Q / CodeWhisperer
+.aws/q/
+.amazonq/
+.codewhisperer/
+
+# Tabnine
+.tabnine*
+
+# Generic AI/LLM artifacts
+.llm/
+.ai-*
+ai-*.log
+*.ai-session
+*.prompt
+.prompts/
+
+# Conversation logs and context files
+*-conversation.json
+*-chat.json
+*.chat-history
+.context/

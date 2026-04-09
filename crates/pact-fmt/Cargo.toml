@@ -1,0 +1,18 @@
+[package]
+name        = "pact-fmt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Opinionated code formatter for the Pact language, operating directly on the concrete syntax tree to preserve comments and whitespace intent."
+
+[dependencies]
+# TODO: Narrow this to `pact-syntax` once that crate houses the CST types.
+#       `pact-compiler` is a provisional stand-in until the syntax crate is
+#       fleshed out enough to export the concrete syntax tree directly.
+pact-syntax.workspace     = true
+pact-diagnostic.workspace = true
+
+thiserror.workspace = true
+
+[lints]
+workspace = true

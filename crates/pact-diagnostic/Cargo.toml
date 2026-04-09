@@ -1,0 +1,19 @@
+[package]
+name        = "pact-diagnostic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shared diagnostic data model for the Pact toolchain: source spans, severity levels, labels, and notes used by all compiler phases and the LSP server."
+
+[features]
+# Enable `serde::{Serialize, Deserialize}` impls on all diagnostic types.
+# Not included in the default build to keep the core compiler lean; enable
+# this feature in tools that serialise diagnostics (e.g., JSON output, LSP).
+serde = ["dep:serde"]
+
+[dependencies]
+thiserror.workspace = true
+serde = { workspace = true, optional = true }
+
+[lints]
+workspace = true

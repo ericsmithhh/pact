@@ -1,0 +1,14 @@
+[package]
+name        = "pact-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lexer, parser, and concrete syntax tree (CST) for the Pact language."
+
+[dependencies]
+pact-diagnostic.workspace = true
+
+thiserror.workspace = true
+
+[lints]
+workspace = true

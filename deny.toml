@@ -1,0 +1,80 @@
+# cargo-deny configuration for the Pact workspace.
+# Run: cargo deny check
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check the full dependency graph, not just direct dependencies.
+all-features = false
+
+# ---------------------------------------------------------------------------
+# License policy
+# ---------------------------------------------------------------------------
+[licenses]
+# Confidence threshold: only accept a license match if SPDX confidence >= this.
+confidence-threshold = 0.9
+
+# Licenses that are unconditionally allowed anywhere in the dependency tree.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "CC0-1.0",
+    "OpenSSL",
+]
+
+# Copyleft and non-commercial licenses are denied.
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "LGPL-2.0",
+    "LGPL-2.1",
+    "LGPL-3.0",
+    "AGPL-3.0",
+    "CC-BY-NC-4.0",
+]
+
+# ---------------------------------------------------------------------------
+# Duplicate crate detection
+# ---------------------------------------------------------------------------
+[bans]
+# Deny multiple versions of the same crate (warn by default; set to "deny"
+# once the tree is stable enough to enforce it strictly).
+multiple-versions = "warn"
+
+# Crates that must never appear in the dependency tree.
+deny = []
+
+# Permitted duplicate crates (fill in as the tree grows).
+skip = []
+
+# ---------------------------------------------------------------------------
+# Security advisories
+# ---------------------------------------------------------------------------
+[advisories]
+# Path to a local advisory database clone; omit to fetch from crates.io.
+# db-path = "~/.cargo/advisory-db"
+
+# Fetch the advisory database from the default GitHub source.
+db-urls = ["https://github.com/rustsec/advisory-db"]
+
+# Deny all known vulnerabilities.
+vulnerability = "deny"
+
+# Deny crates that have been unmaintained for a long time.
+unmaintained = "warn"
+
+# Deny crates with known security notices (not full CVEs).
+notice = "warn"
+
+# ---------------------------------------------------------------------------
+# Source policy: only crates.io and local paths are allowed.
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git      = "deny"
+allow-registry   = ["https://github.com/rust-lang/crates.io-index"]

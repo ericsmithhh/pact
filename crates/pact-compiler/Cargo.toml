@@ -1,0 +1,18 @@
+[package]
+name        = "pact-compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core compiler pipeline for the Pact language: name resolution, type inference, effect lowering, and Cranelift code generation."
+
+[dependencies]
+# pact-syntax is the canonical home for the lexer, parser, and CST.
+# pact-compiler re-exports it so downstream crates that only need compilation
+# services can reach syntax types through a single dependency.
+pact-syntax.workspace     = true
+pact-diagnostic.workspace = true
+
+thiserror.workspace = true
+
+[lints]
+workspace = true

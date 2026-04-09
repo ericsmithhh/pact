@@ -1,0 +1,4 @@
+edition = "2024"
+
+# Wrap long lines at 100 columns (matches typical wide terminal / code review).
+max_width = 100
