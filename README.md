@@ -38,19 +38,13 @@ No `async`/`await` spreading through your code. A spawned task is a pact operati
 
 ## How the safety works
 
-Every function carries an effect row — basically a set of labels the compiler maintains. When your code calls `Http.request(...)`, the compiler adds `Http` to that set. Call `Console.print(...)`, it adds `Console`. You don't write any of this. The compiler infers it by walking your code.
+You deploy an agent. It has access to tools. Somewhere in the back of your mind: *what if it calls something I didn't authorize?* You've got runtime guards, maybe a container, maybe permission checks you wrote and hope are correct. The enforcement lives somewhere else — separate from the code, easy to misconfigure, invisible when it fails.
 
-The set is a hard constraint. If your function's row says `{Console, FileSystem}`, those are the only operations the type checker will accept. Try calling `Http.request` and there's no matching rule — the compiler rejects it the same way it rejects `1 + "hello"`. The types simply don't line up. No special sandbox logic. Just normal type checking doing its job.
+Pact moves that enforcement into the type system. The compiler walks every function, sees every operation it performs, and tracks them in a set called an effect row. You don't annotate this. The compiler infers it from the actual code. If your function calls `Console.print(...)`, the set gets `{Console}`. If it also calls `Http.request(...)`, you get `{Console, Http}`. That set is then a hard constraint — try calling an operation that isn't in the set, and the compiler rejects it. Same mechanism as a type mismatch. Not a new concept, not a special sandbox mode. Just type checking.
 
-When you wrap code in a `with bind ...` block, the bound effect gets removed from the row. What's left after all bindings are applied is exactly the set of effects the code can still perform. If that set is empty, the code is pure. If it contains only `{AgentIO}`, the code can only call agent operations. There's no way to sneak something in — the row is computed from the actual operations in your code, not from annotations you might forget.
+Here's where it gets interesting. When you provide a binding with `with bind ...`, the compiler *removes* that effect from the row. What's left is exactly what the code can still do. If you bind everything, the remaining set is empty — pure code. If you only bind `AgentIO`, the code can only perform agent operations. The row is computed, not declared. You can't forget to update it. You can't misconfigure it. It's derived from the code itself.
 
-The underlying theory builds on row polymorphism (Rémy, 1989) extended to effects by Leijen's Koka work. But the practical guarantee is simple: the compiler sees everything your function does, tracks it in a set, and enforces that set at every call boundary. Effects in, effects out, nothing hidden.
-
-Four steps to the cycle. **Declare** the operations — a pact defines what's available, nothing runs yet. **Use** them in a function — the compiler infers the effect row automatically, adding each pact you touch. **Bind** to give operations meaning — a binding decides what `print` or `call_tool` actually does. **Apply** the binding with `with` — the compiler removes the bound effect from the row, and what remains is provably the only set of things the wrapped code can do.
-
-Three outcomes at the apply step: bind to real IO for production, bind to a mock for testing, or provide no binding at all — compile error.
-
-A pact declares *what operations exist*. A binding decides *what they do*:
+This is what actual control over untrusted code looks like:
 
 ```pact
 fix tool_bind = bind AgentIO {
@@ -71,13 +65,17 @@ with tool_bind {
 }
 ```
 
-Run untrusted code with tight constraints:
+The binding decides what `call_tool` does — and gates it. The type system decided what `agent()` is allowed to *ask for* before the code ever ran. Swap `tool_bind` for a mock and you're testing. Remove it entirely and you get a compile error. Three deployments from the same code, all enforced.
+
+And this line:
 
 ```pact
 kind PluginFn = fun() => Result with {FileSystem, ToolRegistry, Breach(String)}
 ```
 
-The type is the permission slip. Impossible to escape those bounds—not because of a runtime jail, but because the type itself forbids it.
+That's the whole security contract. If the code inside tries to call `Http.request()`, it's a compile error — the same kind you'd get from `1 + "hello"`. Not a guard you hope works. A type error, caught before the binary exists.
+
+The theory behind this is row polymorphism extended to effects (Rémy, Leijen/Koka). But you don't need to know that to use it. You write code, the compiler tracks what it does, and the types enforce the boundary. That's the entire model.
 
 ## Why this design
 
