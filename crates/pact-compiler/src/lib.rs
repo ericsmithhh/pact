@@ -21,6 +21,7 @@
 //! incremental rebuilds only recompute phases whose inputs changed.
 
 pub mod manifest;
+pub mod project;
 
 /// Re-export the syntax crate so consumers of `pact-compiler` can reach CST
 /// types without an additional explicit dependency.
